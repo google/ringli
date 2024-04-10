@@ -1,7 +1,5 @@
 # How to Contribute
 
-We currently do not accept patches and contributions to this project.
-
 ## Before you begin
 
 ### Sign our Contributor License Agreement

@@ -236,7 +236,7 @@ float ComputeSpeed(double length, const std::function<void()> f) {
   int64_t microseconds =
       std::chrono::duration_cast<std::chrono::microseconds>(stop - start)
           .count();
-  return static_cast<double>(microseconds) * 1e6 / length;
+  return length * 1e6 / static_cast<double>(microseconds);
 }
 
 template <typename T>

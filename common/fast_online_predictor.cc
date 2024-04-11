@@ -29,45 +29,47 @@ namespace HWY_NAMESPACE {
 
 using DF = HWY_CAPPED(float, kOnlinePredictorOrder);
 constexpr DF df;
+namespace hn = hwy::HWY_NAMESPACE;
 
 float PredictFromBackwardErrors(const float* __restrict k,
                                 const float* __restrict g, int order) {
-  auto vkg = Zero(df);
+  auto vkg = hn::Zero(df);
   for (int i = 0; i < order; i += Lanes(df)) {
-    const auto vk = LoadU(df, k + i);
-    const auto vg = LoadU(df, g + i);
-    vkg = MulAdd(vk, vg, vkg);
+    const auto vk = hn::LoadU(df, k + i);
+    const auto vg = hn::LoadU(df, g + i);
+    vkg = hn::MulAdd(vk, vg, vkg);
   }
-  return -1.0f * GetLane(SumOfLanes(df, vkg));
+  return -1.0f * hn::ReduceSum(df, vkg);
 }
 
 void UpdatePredictorState(float sample, float* __restrict k,
                           float* __restrict f, float* __restrict g,
                           float* __restrict d, int order, float beta,
                           float regul) {
-  DCHECK_EQ(order % Lanes(df), 0);
+  DCHECK_EQ(order % hn::Lanes(df), 0);
   f[0] = sample;
   for (int m = 0; m < order; ++m) {
     f[m + 1] = f[m] + k[m] * g[m];
   }
-  const auto vbeta = Set(df, beta);
-  const auto vregul = Set(df, regul);
-  for (int i = order - Lanes(df); i >= 0; i -= Lanes(df)) {
-    const auto vf = LoadU(df, f + i);
-    const auto vf1 = LoadU(df, f + i + 1);
-    const auto vg = LoadU(df, g + i);
-    const auto vk = LoadU(df, k + i);
-    const auto vff = Mul(vf, vf);
-    const auto vgg = Mul(vg, vg);
-    const auto vd = Add(MulAdd(LoadU(df, d + i), vbeta, vregul), Add(vff, vgg));
-    const auto vg1 = MulAdd(vk, vf, vg);
-    StoreU(Sub(vk, Div(Add(Mul(vf, vg1), Mul(vf1, vg)), vd)), df, k + i);
-    StoreU(vg1, df, g + i + 1);
-    StoreU(vd, df, d + i);
+  const auto vbeta = hn::Set(df, beta);
+  const auto vregul = hn::Set(df, regul);
+  for (int i = order - hn::Lanes(df); i >= 0; i -= hn::Lanes(df)) {
+    const auto vf = hn::LoadU(df, f + i);
+    const auto vf1 = hn::LoadU(df, f + i + 1);
+    const auto vg = hn::LoadU(df, g + i);
+    const auto vk = hn::LoadU(df, k + i);
+    const auto vff = hn::Mul(vf, vf);
+    const auto vgg = hn::Mul(vg, vg);
+    const auto vd = hn::Add(hn::MulAdd(hn::LoadU(df, d + i), vbeta, vregul),
+                            hn::Add(vff, vgg));
+    const auto vg1 = hn::MulAdd(vk, vf, vg);
+    StoreU(hn::Sub(vk, hn::Div(hn::MulAdd(vf, vg1, hn::Mul(vf1, vg)), vd)), df,
+           k + i);
+    hn::StoreU(vg1, df, g + i + 1);
+    hn::StoreU(vd, df, d + i);
   }
   g[0] = sample;
 }
-
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
 }  // namespace ringli

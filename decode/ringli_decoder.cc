@@ -45,6 +45,20 @@
 namespace ringli {
 namespace {
 
+std::unique_ptr<Predictor> GetPredictor(const RingliDecoderConfig& config,
+                                        const RingliPredictiveHeader& header) {
+  if (config.use_online_predictive_coding) {
+    const bool fast_mode = config.predictor_fast_mode();
+    if (fast_mode) {
+      return std::make_unique<FastOnlinePredictor>();
+    } else {
+      return std::make_unique<OnlinePredictor>(kOnlinePredictorRegulariser);
+    }
+  } else {
+    return BlockPredictor<kRingliBlockSize>::CreateForDecoder(&header);
+  }
+}
+
 AudioBlock DecodePredictive(const RingliDecoderConfig& config,
                             const RingliBlock& encoded_block) {
   const size_t num_channels = encoded_block.channels.GetChannels().size();
@@ -52,49 +66,14 @@ AudioBlock DecodePredictive(const RingliDecoderConfig& config,
   for (size_t c = 0; c < num_channels; ++c) {
     const RingliPredictiveHeader& header = encoded_block.header.pred[c];
     const int quant = config.pred_quant;
-    if (config.use_online_predictive_coding) {
-      std::unique_ptr<Predictor> predictor;
-      const bool fast_mode = config.predictor_fast_mode();
-      if (fast_mode) {
-        predictor = std::make_unique<FastOnlinePredictor>();
-      } else {
-        predictor =
-            std::make_unique<OnlinePredictor>(kOnlinePredictorRegulariser);
-      }
-      for (int i = 0; i < kRingliBlockSize; i++) {
-        const float prediction = predictor->Predict();
-        const float residual = quant * encoded_block.channels[c][i];
-        const float sample_deq = prediction + residual;
-        predictor->AddNewSample(sample_deq);
-        decoded_block[c][i] = std::round(sample_deq);
-      }
-    } else {
-      if (quant == 1) {
-        BlockPredictor<int> block_predictor =
-            BlockPredictor<int>::CreateForDecoder(decoded_block[c].Data(),
-                                                  &header);
-        for (int i = 0; i < kRingliBlockSize; ++i) {
-          const int32_t prediction = std::round(block_predictor.Predict());
-          const int32_t residual = quant * encoded_block.channels[c][i];
-          decoded_block[c][i] = prediction + residual;
-          block_predictor.AddNewSample(decoded_block[c][i]);
-        }
-      } else {
-        std::array<float, kRingliBlockSize> history;
-        for (int i = 0; i < kRingliBlockSize; i++) {
-          history[i] = quant * encoded_block.channels[c][i];
-        }
-        BlockPredictor<float> block_predictor =
-            BlockPredictor<float>::CreateForDecoder(&history[0], &header);
-        for (int i = 0; i < kRingliBlockSize; i++) {
-          const float prediction = block_predictor.Predict();
-          history[i] += prediction;
-          block_predictor.AddNewSample(history[i]);
-        }
-        for (int i = 0; i < kRingliBlockSize; ++i) {
-          decoded_block[c][i] = std::round(history[i]);
-        }
-      }
+    std::unique_ptr<Predictor> predictor = GetPredictor(config, header);
+    for (int i = 0; i < kRingliBlockSize; i++) {
+      float prediction = predictor->Predict();
+      if (quant == 1) prediction = std::round(prediction);
+      const float residual = quant * encoded_block.channels[c][i];
+      const float sample_deq = prediction + residual;
+      predictor->AddNewSample(sample_deq);
+      decoded_block[c][i] = std::round(sample_deq);
     }
   }
   return decoded_block;

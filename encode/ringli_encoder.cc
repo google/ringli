@@ -137,7 +137,8 @@ RingliBlock EncodePredictive(const RingliEncoderConfig& config,
       NoiseShaper noise_shaper;
       const float iquant = 1.0 / quant;
       for (int i = 0; i < kRingliBlockSize; i++) {
-        const float prediction = predictor->Predict();
+        float prediction = predictor->Predict();
+        if (quant == 1) prediction = std::round(prediction);
         sample = block[c][i];
         if (config.use_noise_shaping) {
           float filtered_noise = noise_shaper.GetFilteredNoise();
@@ -163,28 +164,25 @@ RingliBlock EncodePredictive(const RingliEncoderConfig& config,
       for (int order = order_min; order <= order_max; order += 2) {
         RingliPredictiveHeader& header = encoded_block.header.pred[c];
         int total_num_bits = 0;
+        float iquant = 1.0 / quant;
+        BlockPredictor<kRingliBlockSize> block_predictor =
+            BlockPredictor<kRingliBlockSize>::CreateForEncoder(order, &header,
+                                                               covlattice_orig);
         if (quant == 1) {
-          BlockPredictor<int> block_predictor =
-              BlockPredictor<int>::CreateForEncoder(block[c].Data(), order,
-                                                    &header, covlattice_orig);
-          for (int i = 0; i < kRingliBlockSize; ++i) {
-            const int prediction = std::round(block_predictor.Predict());
+          for (int i = 0; i < kRingliBlockSize; i++) {
+            const float prediction = std::round(block_predictor.Predict());
             block_predictor.AddNewSample(block[c][i]);
             encoded_block.channels[c][i] = block[c][i] - prediction;
             total_num_bits += num_bits(encoded_block.channels[c][i]);
           }
         } else {
-          float iquant = 1.0 / quant;
-          float history[kRingliBlockSize];
-          BlockPredictor<float> block_predictor =
-              BlockPredictor<float>::CreateForEncoder(&history[0], order,
-                                                      &header, covlattice_orig);
           for (int i = 0; i < kRingliBlockSize; i++) {
             const float prediction = block_predictor.Predict();
             const float error = block[c][i] - prediction;
             encoded_block.channels[c][i] = std::round(error * iquant);
-            history[i] = prediction + quant * encoded_block.channels[c][i];
-            block_predictor.AddNewSample(history[i]);
+            const float sample_deq =
+                prediction + quant * encoded_block.channels[c][i];
+            block_predictor.AddNewSample(sample_deq);
             total_num_bits += num_bits(encoded_block.channels[c][i]);
           }
         }

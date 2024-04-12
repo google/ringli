@@ -18,6 +18,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -37,58 +38,59 @@ void ComputePredictorParams(RingliPredictiveHeader* header, float* pcoefs,
 
 void DefaultLineSpectralFrequencies(uint16_t* quant_lsf, int order);
 
-template <typename T>
+template <size_t kBlockSize>
 class BlockPredictor : public Predictor {
  public:
-  static BlockPredictor<T> CreateForEncoder(
-      const T* block, int order, RingliPredictiveHeader* header,
+  static BlockPredictor<kBlockSize> CreateForEncoder(
+      int order, RingliPredictiveHeader* header,
       CovarianceLattice<int32_t>& covlattice_orig) {
     std::vector<float> pcoefs(order);
     covlattice_orig.FitPredictorCoeffs(&pcoefs[0], order);
     ComputePredictorParams(header, &pcoefs[0], order);
-    return BlockPredictor(block, order, std::move(pcoefs));
+    return BlockPredictor<kBlockSize>(order, std::move(pcoefs));
   }
 
-  static BlockPredictor<T> CreateForDecoder(
-      const T* block, const RingliPredictiveHeader* header) {
+  static std::unique_ptr<Predictor> CreateForDecoder(
+      const RingliPredictiveHeader* header) {
     const int order = header->quant_lsf.size();
     std::vector<float> pcoefs(order);
     ComputeLinearPredictorCoeffs(&header->quant_lsf[0], &pcoefs[0], order);
-    return BlockPredictor(block, order, std::move(pcoefs));
+    return std::make_unique<BlockPredictor<kBlockSize>>(order,
+                                                        std::move(pcoefs));
   }
 
-  explicit BlockPredictor(const T* block, int order,
-                          const std::vector<float>& pcoefs)
-      : position_(0), block_(block), order_(order), pcoefs_(pcoefs) {}
+  explicit BlockPredictor(int order, const std::vector<float>& pcoefs)
+      : position_(0), order_(order), pcoefs_(pcoefs) {}
 
   float Predict() override {
     if (position_ == 0) {
       return 0;
     }
     if (position_ == 1) {
-      return block_[position_ - 1];
+      return history_[position_ - 1];
     }
     if (position_ < order_ && order_ > 2) {
-      return 2 * block_[position_ - 1] - block_[position_ - 2];
+      return 2 * history_[position_ - 1] - history_[position_ - 2];
     }
     float prediction = 0.0f;
     for (int p = 0; p < order_; ++p) {
-      prediction += pcoefs_[p] * block_[position_ - 1 - p];
+      prediction += pcoefs_[p] * history_[position_ - 1 - p];
     }
     return prediction;
   };
 
   void AddNewSample(float sample) override {
-    CHECK_EQ(block_[position_], sample);
+    history_[position_] = sample;
     position_++;
   };
-  void Reset() override {};
+
+  void Reset() override { position_ = 0; };
 
  private:
   uint32_t position_;
-  const T* block_;
   const int order_;
   const std::vector<float> pcoefs_;
+  std::array<float, kBlockSize> history_;
 };
 
 }  // namespace ringli

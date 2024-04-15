@@ -80,12 +80,12 @@ AudioBlock DecodePredictive(const RingliDecoderConfig& config,
 }
 
 AudioBlock DecodeWithDCT(const RingliDecoderConfig& config,
-                         const DCT<kDctLength>& dct, const RingliBlock& prev,
-                         const RingliBlock& current, const RingliBlock& next) {
+                         const RingliBlock& prev, const RingliBlock& current,
+                         const RingliBlock& next) {
   const size_t num_channels = current.channels.GetChannels().size();
   AudioBlock decoded_result(num_channels);
   for (size_t c = 0; c < num_channels; ++c) {
-    DataVector<double, kACPredictionWindowSize> coeff_window;
+    DataVector<float, kACPredictionWindowSize> coeff_window;
     for (int i = 0; i < kACPredictionWindowSize; ++i) {
       const int k = i % kDctLength;
       if (i < kACPredictionBorder) {
@@ -101,17 +101,16 @@ AudioBlock DecodeWithDCT(const RingliDecoderConfig& config,
             next.header.dct.GetQuantizationCoef(k);
       }
     }
-    DataVector<double, kACPredictionWindowSize> output_window;
+    DataVector<float, kACPredictionWindowSize> output_window;
     for (int step = 0; step <= kNumACPredictionSteps; ++step) {
       int k_limit = step == kNumACPredictionSteps ? kDctLength
                                                   : kACPredictionStart << step;
       for (int i = 0; i < kACPredictionWindowSize; i += kDctLength) {
-        DataVector<double, kDctLength> dct_data;
+        DataVector<float, kDctLength> dct_data;
         for (int k = 0; k < k_limit; ++k) {
           dct_data[k] = coeff_window[i + k];
         }
-        const DataVector<double, kDctLength> signal_data =
-            dct.ApplyInverseDCT(dct_data);
+        const DataVector<float, kDctLength> signal_data = InverseDCT(dct_data);
         for (int k = 0; k < kDctLength; ++k) {
           output_window[i + k] = signal_data[k];
         }
@@ -123,12 +122,11 @@ AudioBlock DecodeWithDCT(const RingliDecoderConfig& config,
           Convolve(GaussianKernel<kDctLength>(kACPredictionSigma / k_limit),
                    output_window);
       for (int i = 0; i < kACPredictionWindowSize; i += kDctLength) {
-        DataVector<double, kDctLength> signal_data;
+        DataVector<float, kDctLength> signal_data;
         for (int k = 0; k < kDctLength; ++k) {
           signal_data[k] = output_window[i + k];
         }
-        DataVector<double, kDctLength> dct_data =
-            dct.ApplyDirectDCT(signal_data);
+        DataVector<float, kDctLength> dct_data = ForwardDCT(signal_data);
         for (int k = k_limit; k < 2 * k_limit; ++k) {
           coeff_window[i + k] += dct_data[k];
         }
@@ -208,7 +206,6 @@ bool StreamingRingliDecoder::ProcessHeader(const uint8_t* data, size_t len) {
   WriteWavHeader(wav_header, &wav_data_);
   wav_data_.reserve(wav_data_.size() + wav_header.channel_data_length);
   if (!ringli_header_.config.use_predictive_coding) {
-    dct_ = std::make_unique<DCT<kDctLength>>();
     prev_ = std::make_unique<RingliBlock>(num_channels);
     current_ = std::make_unique<RingliBlock>(num_channels);
     next_ = std::make_unique<RingliBlock>(num_channels);
@@ -288,8 +285,8 @@ bool StreamingRingliDecoder::ProcessBlock(const RingliBlock& block) {
       *current_ = block;
     } else {
       *next_ = block;
-      WriteBlock(DecodeWithDCT(ringli_header_.config, *dct_, *prev_, *current_,
-                               *next_));
+      WriteBlock(
+          DecodeWithDCT(ringli_header_.config, *prev_, *current_, *next_));
       *prev_ = *current_;
       *current_ = *next_;
     }

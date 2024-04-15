@@ -23,16 +23,46 @@
 
 namespace ringli {
 
+template <int SIZE>
+class DCT {
+ public:
+  DataVector<float, SIZE> ApplyDirectDCT(
+      const DataVector<float, SIZE>& input) const {
+    return direct_matrix_ * input;
+  }
+
+  DataVector<float, SIZE> ApplyInverseDCT(
+      const DataVector<float, SIZE>& input) const {
+    return inverse_matrix_ * input;
+  }
+
+ private:
+  static DataMatrix<float, SIZE> CreateDirectMatrix() {
+    DataMatrix<float, SIZE> directDataMatrix;
+    for (int i = 0; i < SIZE; i++) {
+      float coefI = i == 0 ? sqrt(1.0 / SIZE) : sqrt(2.0 / SIZE);
+      for (int j = 0; j < SIZE; j++) {
+        directDataMatrix[i][j] = coefI * cos(M_PI / SIZE * (j + 0.5) * i);
+      }
+    }
+
+    return directDataMatrix;
+  }
+
+  const DataMatrix<float, SIZE> direct_matrix_ = CreateDirectMatrix();
+  const DataMatrix<float, SIZE> inverse_matrix_ = direct_matrix_.Transposed();
+};
+
 TEST(DCTTest, VerifyInverse) {
   DCT<kDctLength> dct;
 
   for (int i = 0; i < kDctLength; ++i) {
-    DataVector<double, kDctLength> e;
+    DataVector<float, kDctLength> e;
     e[i] = 1.0;
-    DataVector<double, kDctLength> e1 = dct.ApplyDirectDCT(e);
-    DataVector<double, kDctLength> e2 = dct.ApplyInverseDCT(e1);
-    DataVector<double, kDctLength> error = e - e2;
-    EXPECT_LT(error.AbsMax(), 1e-14);
+    DataVector<float, kDctLength> e1 = dct.ApplyDirectDCT(e);
+    DataVector<float, kDctLength> e2 = dct.ApplyInverseDCT(e1);
+    DataVector<float, kDctLength> error = e - e2;
+    EXPECT_LT(error.AbsMax(), 1e-7);
   }
 }
 
@@ -40,17 +70,63 @@ TEST(DCTTest, VerifyOrthogonal) {
   DCT<kDctLength> dct;
 
   for (int i = 0; i < kDctLength; ++i) {
-    DataVector<double, kDctLength> ei;
+    DataVector<float, kDctLength> ei;
     ei[i] = 1.0;
-    DataVector<double, kDctLength> dct_ei = dct.ApplyDirectDCT(ei);
+    DataVector<float, kDctLength> dct_ei = dct.ApplyDirectDCT(ei);
     for (int j = 0; j < kDctLength; ++j) {
-      DataVector<double, kDctLength> ej;
+      DataVector<float, kDctLength> ej;
       ej[j] = 1.0;
-      DataVector<double, kDctLength> dct_ej = dct.ApplyDirectDCT(ej);
+      DataVector<float, kDctLength> dct_ej = dct.ApplyDirectDCT(ej);
       float v = dct_ei.dot(dct_ej);
       float expected = (i == j ? 1.0 : 0.0);
-      EXPECT_NEAR(v, expected, 1e-14);
+      EXPECT_NEAR(v, expected, 5e-7);
     }
+  }
+}
+
+TEST(DCTTest, TestForwardDCT) {
+  DCT<kDctLength> dct;
+
+  for (int i = 0; i < kDctLength; ++i) {
+    DataVector<float, kDctLength> e;
+    e[i] = 1.0;
+    DataVector<float, kDctLength> e1 = dct.ApplyDirectDCT(e);
+    DataVector<float, kDctLength> e2 = ForwardDCT(e);
+    DataVector<float, kDctLength> error = e1 - e2;
+    EXPECT_LT(error.AbsMax(), 3e-7);
+  }
+  {
+    DataVector<float, kDctLength> e;
+    for (int i = 0; i < kDctLength; ++i) {
+      e[i] = 1.0;
+    }
+    DataVector<float, kDctLength> e1 = dct.ApplyDirectDCT(e);
+    DataVector<float, kDctLength> e2 = ForwardDCT(e);
+    DataVector<float, kDctLength> error = e1 - e2;
+    EXPECT_LT(error.AbsMax(), 5e-8);
+  }
+}
+
+TEST(DCTTest, TestInverseDCT) {
+  DCT<kDctLength> dct;
+
+  for (int i = 0; i < kDctLength; ++i) {
+    DataVector<float, kDctLength> e;
+    e[i] = 1.0;
+    DataVector<float, kDctLength> e1 = dct.ApplyInverseDCT(e);
+    DataVector<float, kDctLength> e2 = InverseDCT(e);
+    DataVector<float, kDctLength> error = e1 - e2;
+    EXPECT_LT(error.AbsMax(), 5e-7);
+  }
+  {
+    DataVector<float, kDctLength> e;
+    for (int i = 0; i < kDctLength; ++i) {
+      e[i] = 1.0;
+    }
+    DataVector<float, kDctLength> e1 = dct.ApplyInverseDCT(e);
+    DataVector<float, kDctLength> e2 = InverseDCT(e);
+    DataVector<float, kDctLength> error = e1 - e2;
+    EXPECT_LT(error.AbsMax(), 5e-6);
   }
 }
 

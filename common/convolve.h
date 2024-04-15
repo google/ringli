@@ -23,10 +23,10 @@
 namespace ringli {
 
 template <int K>
-DataVector<double, 2 * K + 1> GaussianKernel(double sigma) {
-  DataVector<double, 2 * K + 1> res;
-  double alpha = -0.5 / sigma / sigma;
-  double sum = 0.0;
+DataVector<float, 2 * K + 1> GaussianKernel(float sigma) {
+  DataVector<float, 2 * K + 1> res;
+  float alpha = -0.5 / sigma / sigma;
+  float sum = 0.0;
   for (int j = -K; j <= K; ++j) {
     res[K + j] = std::exp(alpha * j * j);
     sum += res[K + j];
@@ -38,14 +38,14 @@ DataVector<double, 2 * K + 1> GaussianKernel(double sigma) {
 }
 
 template <int W, int SIZE>
-DataVector<double, SIZE> Convolve(const DataVector<double, W>& kernel,
-                                  const DataVector<double, SIZE>& data) {
+DataVector<float, SIZE> Convolve(const DataVector<float, W>& kernel,
+                                 const DataVector<float, SIZE>& data) {
   static_assert(SIZE >= W);
   static_assert(W % 2 == 1);
   constexpr int K = W / 2;
-  DataVector<double, SIZE> res;
+  DataVector<float, SIZE> res;
   for (int i = 0; i < SIZE; ++i) {
-    double sum = 0;
+    float sum = 0;
     for (int j = -K; j <= K; ++j) {
       int idx = std::max(0, std::min(SIZE - 1, i + j));
       sum += data[idx] * kernel[K + j];

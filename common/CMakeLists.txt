@@ -7,6 +7,7 @@ add_library(common STATIC
     context.h
     convolve.h
     covariance_lattice.h
+    dct.cc
     dct.h
     distributions.h
     entropy_coding.h

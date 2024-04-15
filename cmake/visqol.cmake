@@ -6,7 +6,6 @@ FetchContent_Declare(visqol
 )
 FetchContent_MakeAvailable(visqol)
 
-FetchContent_GetProperties(visqol)
 add_library(visqol_proto STATIC ${visqol_SOURCE_DIR}/src/proto/similarity_result.proto ${visqol_SOURCE_DIR}/src/proto/visqol_config.proto)
 
 include(${protobuf_BINARY_DIR}/cmake/protobuf/protobuf-generate.cmake)

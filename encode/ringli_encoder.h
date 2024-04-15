@@ -85,7 +85,6 @@ class StreamingRingliEncoder : public StreamingInterface {
   size_t output_pos_ = 0;
   size_t idx_ = 0;
 
-  std::unique_ptr<DCT<kDctLength>> dct_;
   std::unique_ptr<AudioBlock> prev_;
   std::unique_ptr<AudioBlock> current_;
   std::unique_ptr<AudioBlock> next_;

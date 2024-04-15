@@ -19,7 +19,7 @@ if [ "${1}" = "debug" ]; then
     (cd debug_build && cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ..)
 elif [ "${1}" = "asan" ]; then
     mkdir -p asan_build
-    (cd asan_build && cmake -G Ninja -DCMAKE_C_FLAGS='-fsanitize=address' -DCMAKE_CXX_FLAGS='-fsanitize=address' -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ..)
+    (cd asan_build && cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_FLAGS='-fsanitize=address' -DCMAKE_CXX_FLAGS='-fsanitize=address' -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ..)
 else
     mkdir -p build
     (cd build && cmake -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ..)

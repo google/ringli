@@ -54,7 +54,6 @@ class StreamingRingliDecoder : public StreamingInterface {
   std::string ringli_data_;
   std::string wav_data_;
   RingliHeader ringli_header_;
-  std::unique_ptr<DCT<kDctLength>> dct_;
   std::unique_ptr<RingliBlock> prev_;
   std::unique_ptr<RingliBlock> current_;
   std::unique_ptr<RingliBlock> next_;

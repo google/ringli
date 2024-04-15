@@ -208,8 +208,8 @@ RingliBlock EncodePredictive(const RingliEncoderConfig& config,
 }
 
 RingliBlock EncodeWithDCT(const RingliEncoderConfig& config,
-                          const DCT<kDctLength>& dct, const AudioBlock& prev,
-                          const AudioBlock& current, const AudioBlock& next) {
+                          const AudioBlock& prev, const AudioBlock& current,
+                          const AudioBlock& next) {
   const size_t num_channels = current.GetChannels().size();
   RingliBlock encoded_block(num_channels);
 
@@ -221,7 +221,7 @@ RingliBlock EncodeWithDCT(const RingliEncoderConfig& config,
   CalculateQuantization(next, config, next_header);
 
   for (size_t c = 0; c < num_channels; ++c) {
-    DataVector<double, kACPredictionWindowSize> coeff_window;
+    DataVector<float, kACPredictionWindowSize> coeff_window;
     for (int i = 0; i < kACPredictionWindowSize; ++i) {
       if (i < kACPredictionBorder) {
         coeff_window[i] = prev[c][kRingliBlockSize - kACPredictionBorder + i];
@@ -232,30 +232,29 @@ RingliBlock EncodeWithDCT(const RingliEncoderConfig& config,
       }
     }
     for (int i = 0; i < kACPredictionWindowSize; i += kDctLength) {
-      DataVector<double, kDctLength> signal_data;
+      DataVector<float, kDctLength> signal_data;
       for (int k = 0; k < kDctLength; ++k) {
         signal_data[k] = coeff_window[i + k];
       }
-      const DataVector<double, kDctLength> dct_data =
-          dct.ApplyDirectDCT(signal_data);
+      const DataVector<float, kDctLength> dct_data = ForwardDCT(signal_data);
       for (int k = 0; k < kDctLength; ++k) {
         coeff_window[i + k] = dct_data[k];
       }
     }
-    DataVector<double, kACPredictionWindowSize> predictor_window;
-    DataVector<double, kACPredictionWindowSize> output_window;
+    DataVector<float, kACPredictionWindowSize> predictor_window;
+    DataVector<float, kACPredictionWindowSize> output_window;
     int prev_k_limit = 0;
     for (int step = 0; step <= kNumACPredictionSteps; ++step) {
       int k_limit = step == kNumACPredictionSteps ? kDctLength
                                                   : kACPredictionStart << step;
       for (int i = 0; i < kACPredictionWindowSize; i += kDctLength) {
         for (int k = prev_k_limit; k < k_limit; ++k) {
-          double quant = i < kACPredictionBorder
-                             ? prev_header.GetQuantizationCoef(k)
-                         : i < kRingliBlockSize + kACPredictionBorder
-                             ? curr_header.GetQuantizationCoef(k)
-                             : next_header.GetQuantizationCoef(k);
-          double qcoef = coeff_window[i + k] / quant;
+          float quant = i < kACPredictionBorder
+                            ? prev_header.GetQuantizationCoef(k)
+                        : i < kRingliBlockSize + kACPredictionBorder
+                            ? curr_header.GetQuantizationCoef(k)
+                            : next_header.GetQuantizationCoef(k);
+          float qcoef = coeff_window[i + k] / quant;
           int32_t icoef = std::round(qcoef);
           if (i >= kACPredictionBorder &&
               i < kRingliBlockSize + kACPredictionBorder) {
@@ -266,12 +265,12 @@ RingliBlock EncodeWithDCT(const RingliEncoderConfig& config,
           }
         }
         if (step < kNumACPredictionSteps) {
-          DataVector<double, kDctLength> dct_data;
+          DataVector<float, kDctLength> dct_data;
           for (int k = 0; k < k_limit; ++k) {
             dct_data[k] = coeff_window[i + k];
           }
-          const DataVector<double, kDctLength> signal_data =
-              dct.ApplyInverseDCT(dct_data);
+          const DataVector<float, kDctLength> signal_data =
+              InverseDCT(dct_data);
           for (int k = 0; k < kDctLength; ++k) {
             output_window[i + k] = signal_data[k];
           }
@@ -284,12 +283,11 @@ RingliBlock EncodeWithDCT(const RingliEncoderConfig& config,
           Convolve(GaussianKernel<kDctLength>(kACPredictionSigma / k_limit),
                    output_window);
       for (int i = 0; i < kACPredictionWindowSize; i += kDctLength) {
-        DataVector<double, kDctLength> signal_data;
+        DataVector<float, kDctLength> signal_data;
         for (int k = 0; k < kDctLength; ++k) {
           signal_data[k] = output_window[i + k];
         }
-        const DataVector<double, kDctLength> dct_data =
-            dct.ApplyDirectDCT(signal_data);
+        const DataVector<float, kDctLength> dct_data = ForwardDCT(signal_data);
         for (int k = k_limit; k < 2 * k_limit; ++k) {
           predictor_window[i + k] += dct_data[k];
           coeff_window[i + k] -= dct_data[k];
@@ -347,7 +345,6 @@ void StreamingRingliEncoder::InitForFormat() {
                             num_channels * bytes_per_sample;
   wav_reader_.RegisterCallback("data", this, ProcessDataCb, block_size);
   if (!config_.dconfig.use_predictive_coding) {
-    dct_ = std::make_unique<DCT<kDctLength>>();
     prev_ = std::make_unique<AudioBlock>(num_channels);
     current_ = std::make_unique<AudioBlock>(num_channels);
     next_ = std::make_unique<AudioBlock>(num_channels);
@@ -451,7 +448,7 @@ bool StreamingRingliEncoder::ProcessData(const uint8_t* data, size_t len,
     CopyBlock(data, len, current_.get());
   } else {
     CopyBlock(data, len, next_.get());
-    ProcessBlock(EncodeWithDCT(config_, *dct_, *prev_, *current_, *next_));
+    ProcessBlock(EncodeWithDCT(config_, *prev_, *current_, *next_));
     *prev_ = *current_;
     *current_ = *next_;
   }
@@ -509,7 +506,7 @@ bool StreamingRingliEncoder::Flush() {
     return entropy_coder_->Flush(&ringli_data_);
   }
   CopyBlock(nullptr, 0, next_.get());
-  ProcessBlock(EncodeWithDCT(config_, *dct_, *prev_, *current_, *next_));
+  ProcessBlock(EncodeWithDCT(config_, *prev_, *current_, *next_));
   CompressCoefficients(ringli_blocks_, format_.number_of_channels,
                        config_.dconfig.ecparams, &ringli_data_);
   return true;

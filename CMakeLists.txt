@@ -25,6 +25,7 @@ include(cmake/armadillo.cmake)
 include(cmake/opus.cmake)
 include(cmake/flac.cmake)
 include(cmake/samplerate.cmake)
+include(cmake/zimtohrli.cmake)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 

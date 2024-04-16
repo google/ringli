@@ -22,7 +22,7 @@ add_executable(ringli_eval
     resample.h
 )
 
-target_link_libraries(ringli_eval analysis absl::flags_parse visqol)
+target_link_libraries(ringli_eval analysis absl::flags_parse visqol zimtohrli_base)
 
 add_executable(ringli_analysis_test
     subprocess_test.cc

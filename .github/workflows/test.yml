@@ -18,8 +18,8 @@ jobs:
       run: (curl -O https://apt.llvm.org/llvm.sh && sudo bash llvm.sh 16 all)
     - name: Set default clang
       run: ( sudo ln -f -s /usr/bin/clang++-16 /usr/bin/clang++ && sudo ln -f -s /usr/bin/clang-16 /usr/bin/clang && sudo ln -f -s /usr/bin/clang-tidy-16 /usr/bin/clang-tidy )
-    - name: Install ninja and libogg-dev and ffmpeg
-      run: sudo apt install -y ninja-build libogg-dev ffmpeg
+    - name: Install dependencies
+      run: sudo apt install -y ninja-build libogg-dev ffmpeg libvorbis-dev libflac-dev cmake libasound2-dev libglfw3-dev libopus-dev
     - name: Install modern xxd
       run: (curl -O http://ftp.us.debian.org/debian/pool/main/v/vim/xxd_9.0.1378-2_amd64.deb && sudo dpkg -i xxd_9.0.1378-2_amd64.deb)
     - name: Check out code

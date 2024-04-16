@@ -55,6 +55,7 @@
 #include "common/wav_header.h"
 #include "common/wav_reader.h"
 #include "hwy/aligned_allocator.h"
+#include "zimt/zimtohrli.h"
 
 ABSL_FLAG(int, trim_track_seconds, 0,
           "The track is first trimmed to this length. If 0 the track will not "
@@ -78,7 +79,10 @@ ABSL_FLAG(int, decode_reps, 1, "Decoder repetitions for benchmarking");
 ABSL_FLAG(bool, report_speed, false,
           "Whether to include speed measurements in the evaluation report");
 ABSL_FLAG(std::optional<std::string>, warp_q_binary, std::nullopt,
-          "Path to a WARP-Q binary to use for evaluating codecs.");
+          "Path to a WARP-Q binary to use for evaluating codecs. Run "
+          "analysis/install_warp_q.sh to install the WARP-Q binary.");
+ABSL_FLAG(bool, run_visqol, false,
+          "Whether to run ViSQOL when analyzing results.");
 
 namespace ringli {
 namespace {
@@ -156,6 +160,7 @@ class ResultsReport {
   ErrorNorm error_norm_;
   double visqol_ = 0.0;
   double warp_q_ = 0.0;
+  double zimtohrli_ = 0.0;
 
   static void PrintHeader(int encoding_max_length = 20) {
     PrintColumn("Encoding", encoding_max_length);
@@ -168,7 +173,10 @@ class ResultsReport {
       PrintColumn("Dec speed");
     }
     if (!absl::GetFlag(FLAGS_skip_comparison)) {
-      PrintColumn("Visqol");
+      PrintColumn("Zimtohrli");
+      if (absl::GetFlag(FLAGS_run_visqol)) {
+        PrintColumn("Visqol");
+      }
       if (absl::GetFlag(FLAGS_warp_q_binary).has_value()) {
         PrintColumn("Warp-q");
       }
@@ -191,9 +199,12 @@ class ResultsReport {
       std::cout << encode_speed_ << "x\t\t" << decode_speed_ << "x\t\t";
     }
     if (!absl::GetFlag(FLAGS_skip_comparison)) {
-      std::cout << std::setprecision(4) << visqol_;
+      std::cout << std::setprecision(4) << zimtohrli_ << "\t\t";
+      if (absl::GetFlag(FLAGS_run_visqol)) {
+        std::cout << visqol_ << "\t";
+      }
       if (absl::GetFlag(FLAGS_warp_q_binary).has_value()) {
-        std::cout << "\t" << warp_q_;
+        std::cout << warp_q_;
       }
     }
     std::cout << std::endl;
@@ -439,7 +450,8 @@ void EvaluateCodecs(const std::string& input_file,
   const WavHeader wav_header = ReadWavHeaderAndTrim(input, max_length_seconds);
   std::vector<ResultsReport> results;
   std::unique_ptr<ViSQOL> visqol;
-  if (!absl::GetFlag(FLAGS_skip_comparison)) {
+  if (!absl::GetFlag(FLAGS_skip_comparison) &&
+      absl::GetFlag(FLAGS_run_visqol)) {
     visqol = std::make_unique<ViSQOL>();
   }
   for (const std::string& codec_name : codec_names) {
@@ -461,12 +473,49 @@ void EvaluateCodecs(const std::string& input_file,
             input.data(), wav_header.NumChannels(), wav_header.NumSamples());
         hwy::AlignedNDArray<float, 2> output_samples = BytesToSamples(
             output.data(), wav_header.NumChannels(), wav_header.NumSamples());
-        report.visqol_ =
-            visqol->MOS(input_samples, output_samples, wav_header.SampleRate());
+        if (visqol.get() != nullptr) {
+          report.visqol_ = visqol->MOS(input_samples, output_samples,
+                                       wav_header.SampleRate());
+        }
         if (absl::GetFlag(FLAGS_warp_q_binary).has_value()) {
           WarpQ warp_q{.warp_q_binary =
                            absl::GetFlag(FLAGS_warp_q_binary).value()};
           report.warp_q_ = warp_q.MOS(input_file, output_file);
+        }
+        {
+          float sum_of_squares = 0.0f;
+          zimtohrli::Cam cam;
+          cam.minimum_bandwidth_hz = 4;
+          zimtohrli::Zimtohrli z{
+              .cam_filterbank = cam.CreateFilterbank(wav_header.SampleRate()),
+              .full_scale_sine_db = 80};
+          const size_t num_bands = z.cam_filterbank->filter.Size();
+          const size_t perceptual_sample_rate = 100;
+          const size_t num_energy_frames = wav_header.NumSamples() *
+                                           perceptual_sample_rate /
+                                           wav_header.SampleRate();
+          hwy::AlignedNDArray<float, 2> bands(
+              {wav_header.NumSamples(), num_bands});
+          hwy::AlignedNDArray<float, 2> energy_bands_db(
+              {num_energy_frames, num_bands});
+          hwy::AlignedNDArray<float, 2> in_spectrogram(
+              {num_energy_frames, num_bands});
+          hwy::AlignedNDArray<float, 2> out_spectrogram(
+              {num_energy_frames, num_bands});
+          for (size_t c = 0; c < wav_header.NumChannels(); ++c) {
+            hwy::Span<float> input_signal = input_samples[{c}];
+            hwy::Span<float> output_signal = output_samples[{c}];
+            z.Spectrogram(input_signal, bands, energy_bands_db, in_spectrogram,
+                          in_spectrogram);
+            z.Spectrogram(output_signal, bands, energy_bands_db,
+                          out_spectrogram, out_spectrogram);
+            float distance = z.Distance(/* verbose */ false, in_spectrogram,
+                                        out_spectrogram, perceptual_sample_rate)
+                                 .value;
+            sum_of_squares += distance * distance;
+          }
+          report.zimtohrli_ =
+              std::sqrt(sum_of_squares / wav_header.NumChannels());
         }
       }
     }

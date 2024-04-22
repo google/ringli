@@ -55,6 +55,7 @@
 #include "common/wav_header.h"
 #include "common/wav_reader.h"
 #include "hwy/aligned_allocator.h"
+#include "zimt/mos.h"
 #include "zimt/zimtohrli.h"
 
 ABSL_FLAG(int, trim_track_seconds, 0,
@@ -514,8 +515,8 @@ void EvaluateCodecs(const std::string& input_file,
                                  .value;
             sum_of_squares += distance * distance;
           }
-          report.zimtohrli_ =
-              std::sqrt(sum_of_squares / wav_header.NumChannels());
+          report.zimtohrli_ = zimtohrli::MOSFromZimtohrli(
+              std::sqrt(sum_of_squares / wav_header.NumChannels()));
         }
       }
     }

@@ -491,9 +491,8 @@ void EvaluateCodecs(const std::string& input_file,
               .cam_filterbank = cam.CreateFilterbank(wav_header.SampleRate()),
               .full_scale_sine_db = 80};
           const size_t num_bands = z.cam_filterbank->filter.Size();
-          const size_t perceptual_sample_rate = 100;
           const size_t num_energy_frames = wav_header.NumSamples() *
-                                           perceptual_sample_rate /
+                                           z.perceptual_sample_rate /
                                            wav_header.SampleRate();
           hwy::AlignedNDArray<float, 2> bands(
               {wav_header.NumSamples(), num_bands});
@@ -510,9 +509,10 @@ void EvaluateCodecs(const std::string& input_file,
                           in_spectrogram);
             z.Spectrogram(output_signal, bands, energy_bands_db,
                           out_spectrogram, out_spectrogram);
-            float distance = z.Distance(/* verbose */ false, in_spectrogram,
-                                        out_spectrogram, perceptual_sample_rate)
-                                 .value;
+            float distance =
+                z.Distance(/* verbose */ false, in_spectrogram, out_spectrogram,
+                           z.perceptual_sample_rate)
+                    .value;
             sum_of_squares += distance * distance;
           }
           report.zimtohrli_ = zimtohrli::MOSFromZimtohrli(
